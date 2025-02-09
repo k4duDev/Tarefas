@@ -1,4 +1,5 @@
-#   Passo 3: Criar a tela principal
+#      Passo 4: Filtragem e soma dos valores
+
 
 import flet as ft
 import sqlite3
@@ -7,44 +8,28 @@ import sqlite3
 conn = sqlite3.connect("tarefas.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# Criar tabela de tarefas se não existir
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS tarefas (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    usuario_id INTEGER, empresa_id INTEGER, 
-    data TEXT, descricao TEXT, valor REAL, status TEXT,
-    FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
-    FOREIGN KEY (empresa_id) REFERENCES empresas(id)
-)
-""")
-conn.commit()
-
-# Função para carregar tarefas do usuário
-def carregar_tarefas(usuario_id):
-    cursor.execute("SELECT id, data, descricao, valor, status FROM tarefas WHERE usuario_id = ?", (usuario_id,))
+# Função para carregar tarefas do usuário com filtro
+def carregar_tarefas(usuario_id, filtro="Todas"):
+    if filtro == "Todas":
+        cursor.execute("SELECT id, data, descricao, valor, status FROM tarefas WHERE usuario_id = ?", (usuario_id,))
+    else:
+        cursor.execute("SELECT id, data, descricao, valor, status FROM tarefas WHERE usuario_id = ? AND status = ?", 
+                       (usuario_id, filtro))
     return cursor.fetchall()
 
-# Função para adicionar tarefa
-def adicionar_tarefa(usuario_id, empresa_id, data, descricao, valor):
-    cursor.execute("INSERT INTO tarefas (usuario_id, empresa_id, data, descricao, valor, status) VALUES (?, ?, ?, ?, ?, 'Pendente')",
-                   (usuario_id, empresa_id, data, descricao, valor))
-    conn.commit()
+# Função para calcular a soma total das tarefas
+def calcular_soma(usuario_id, filtro="Todas"):
+    if filtro == "Todas":
+        cursor.execute("SELECT SUM(valor) FROM tarefas WHERE usuario_id = ?", (usuario_id,))
+    else:
+        cursor.execute("SELECT SUM(valor) FROM tarefas WHERE usuario_id = ? AND status = ?", (usuario_id, filtro))
+    
+    total = cursor.fetchone()[0]
+    return total if total else 0
 
-# Função para atualizar tarefa
-def atualizar_tarefa(tarefa_id, descricao, data, valor, status):
-    cursor.execute("UPDATE tarefas SET descricao = ?, data = ?, valor = ?, status = ? WHERE id = ?",
-                   (descricao, data, valor, status, tarefa_id))
-    conn.commit()
-
-# Função para excluir tarefa
-def excluir_tarefa(tarefa_id):
-    cursor.execute("DELETE FROM tarefas WHERE id = ?", (tarefa_id,))
-    conn.commit()
-
-# Tela principal no Flet
+# Tela principal com filtro e soma de valores
 def carregar_tela_principal(page: ft.Page):
     usuario_id = page.session.get("usuario_id")
-    empresa_id = page.session.get("empresa_id")
 
     if not usuario_id:
         page.clean()
@@ -53,10 +38,21 @@ def carregar_tela_principal(page: ft.Page):
 
     page.title = "Tarefas - Gerenciador"
     lista_tarefas = ft.Column()
-    
-    def atualizar_lista():
+    total_valor_text = ft.Text(f"Total: R$ 0.00", size=18, weight="bold")
+
+    filtro_dropdown = ft.Dropdown(
+        label="Filtrar por Status",
+        options=[ft.dropdown.Option("Todas"), ft.dropdown.Option("Pendente"), ft.dropdown.Option("Concluído")],
+        value="Todas"
+    )
+
+    def atualizar_lista(e=None):
+        filtro = filtro_dropdown.value
         lista_tarefas.controls.clear()
-        tarefas = carregar_tarefas(usuario_id)
+        
+        tarefas = carregar_tarefas(usuario_id, filtro)
+        total_valor = calcular_soma(usuario_id, filtro)
+        
         for t in tarefas:
             lista_tarefas.controls.append(
                 ft.Row([
@@ -68,10 +64,14 @@ def carregar_tela_principal(page: ft.Page):
                     ft.IconButton(icon=ft.icons.DELETE, on_click=lambda e, t=t: excluir_tarefa_e_atualizar(page, t[0]))
                 ])
             )
+
+        total_valor_text.value = f"Total: R$ {total_valor:.2f}"
         page.update()
 
+    filtro_dropdown.on_change = atualizar_lista
+
     def adicionar_tarefa_click(e):
-        adicionar_tarefa(usuario_id, empresa_id, data.value, descricao.value, float(valor.value))
+        adicionar_tarefa(usuario_id, data.value, descricao.value, float(valor.value))
         data.value = descricao.value = valor.value = ""
         atualizar_lista()
 
@@ -105,7 +105,13 @@ def carregar_tela_principal(page: ft.Page):
     btn_adicionar = ft.ElevatedButton("Adicionar Tarefa", on_click=adicionar_tarefa_click)
 
     page.clean()
-    page.add(ft.Text("Lista de Tarefas"), data, descricao, valor, btn_adicionar, lista_tarefas)
+    page.add(
+        ft.Text("Lista de Tarefas"),
+        filtro_dropdown,
+        lista_tarefas,
+        total_valor_text,
+        ft.Row([data, descricao, valor, btn_adicionar])
+    )
     atualizar_lista()
 
 ft.app(target=carregar_tela_principal)

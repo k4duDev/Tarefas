@@ -46,6 +46,7 @@ def register_user(username, password):
     try:
         cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_pass))
         conn.commit()
+        ms = ft.mensa
     except sqlite3.IntegrityError:
         return False  # Usuário já existe
     finally:
@@ -224,4 +225,4 @@ def main(page: ft.Page):
     page.add(ft.Column([username_input, password_input, login_button, register_button]))
 
 # Rodar app
-ft.app(target=main)
+ft.app(target=main) 
